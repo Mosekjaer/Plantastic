@@ -1,0 +1,11 @@
+#ifndef CONFIGURATION_H
+#define CONFIGURATIION_H
+
+static const char *TAG = "MQTT_EXAMPLE";
+#define CONFIG_WIFI_SSID "SSID"
+#define CONFIG_WIFI_PASS "PASSWORD"
+#define CONFIG_MQTT_TOPIC_PUBLISH "test/topic1"
+#define CONFIG_MQTT_TOPIC_SUBSCRIBE "test/topic2"
+#define CONFIG_MQTT_BROKER_URL "mqtt://192.168.18.8:1883"
+
+#endif

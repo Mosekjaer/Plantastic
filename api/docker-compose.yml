@@ -1,0 +1,34 @@
+services:
+  api:
+    image: ${DOCKER_REGISTRY-}api
+    build:
+      context: src
+      dockerfile: Dockerfile
+    ports:
+      - "5000:8080" 
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development 
+      - MONGODB_CONNECTION_STRING=mongodb://mongo:27017
+      - MONGODB_DATABASE_NAME=sensor_data_db
+      - MONGODB_COLLECTION_NAME=sensor_readings
+    depends_on:
+      - mongo
+      - seq
+
+  mongo:
+    image: mongo:latest 
+    ports:
+      - "27017:27017"  
+    volumes:
+      - mongo_data:/data/db 
+
+  seq:
+    image: datalust/seq:latest
+    ports:
+      - "5341:80"  
+      - "5342:5341" 
+    environment:
+      - ACCEPT_EULA=Y  
+
+volumes:
+  mongo_data: 

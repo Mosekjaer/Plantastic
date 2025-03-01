@@ -14,6 +14,20 @@ namespace api.Services
             _logger = logger;
         }
 
+        public async Task<List<SensorData>> GetAllSensorDataAsync()
+        {
+            try
+            {
+                return await _sensorDataRepository.GetAllAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving sensor data");
+                return new List<SensorData>();
+            }
+            
+        }
+
         public async Task ProcessSensorDataAsync(string esp32Id, SensorData sensorData)
         {
             try

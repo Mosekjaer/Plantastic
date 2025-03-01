@@ -1,5 +1,8 @@
 using api.Extensions;
+using api.Models;
 using Carter;
+using MongoDB.Bson.Serialization.Serializers;
+using MongoDB.Bson.Serialization;
 using Serilog;
 using Serilog.Events;
 
@@ -14,7 +17,7 @@ Log.Logger = new LoggerConfiguration()
         retainedFileCountLimit: 31,
         outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}"
     )
-    .WriteTo.Seq("http://localhost:5342") 
+    .WriteTo.Seq("http://seq:5341") 
     .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,6 +25,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
 builder.Services.AddCarter();
 builder.Services.AddApplicationServices();
+builder.Services.AddAuthorization();
 
 builder.Services.AddEndpointsApiExplorer();
 
@@ -34,6 +38,8 @@ if (app.Environment.IsDevelopment())
 }
 
 //app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseSerilogRequestLogging();
 app.MapCarter();
 

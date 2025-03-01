@@ -22,6 +22,11 @@ namespace api.Repositories
             await _sensorDataCollection.InsertOneAsync(sensorData);
         }
 
+        public async Task<List<SensorData>> GetAllAsync()
+        {
+            return await _sensorDataCollection.Find(FilterDefinition<SensorData>.Empty).ToListAsync();
+        }
+
         public async Task<SensorData?> GetByIdAsync(string id)
         {
             return await _sensorDataCollection.Find(x => x.Id == id).FirstOrDefaultAsync();

@@ -29,8 +29,30 @@ namespace api.Modules
                     return Results.Problem(detail: "An error occurred while processing the sensor data.", statusCode: 500);
                 }
             })
+            .WithName("PostSensorData")
+            .WithTags("SensorData")
+            .RequireAuthorization();
+
+            app.MapGet("/sensor-data/", async (ISensorDataService sensorDataService, ILogger<SensorDataModule> logger) =>
+            {
+                try
+                {
+                    var result = await sensorDataService.GetAllSensorDataAsync();
+                    if (!result.Any())
+                    {
+                        return Results.NotFound();
+                    }
+                    return Results.Ok(result);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error getting sensor data");
+                    return Results.Problem(detail: "An error occurred while processing the sensor data.", statusCode: 500);
+                }
+            })
             .WithName("ReceiveSensorData")
-            .WithTags("SensorData");
+            .WithTags("SensorData")
+            .RequireAuthorization();
         }
     }
 }

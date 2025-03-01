@@ -34,10 +34,10 @@ jobs:
         sed -i 's/mongo/127.0.0.1/g' .env
         
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore api.sln
       
     - name: Build
-      run: dotnet build --no-restore
+      run: dotnet build api.sln --no-restore
       
     - name: Test
-      run: dotnet test --no-build --verbosity normal 
+      run: dotnet test api.sln --no-build --verbosity normal 

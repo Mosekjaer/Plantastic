@@ -216,6 +216,45 @@ bool connectWiFi() {
     }
 }
 
+bool isValidSensorData(float light, uint16_t soil, uint32_t salt, float temp, float humidity, float battery) {
+    if (isnan(temp) || isnan(humidity)) {
+        Serial.println(F("Failed to read from DHT sensor!"));
+        return false;
+    }
+
+    if (temp < 0 || temp > 50) {
+        Serial.printf("Invalid temperature reading: %.1f°C\n", temp);
+        return false;
+    }
+
+    if (humidity < 0 || humidity > 100) {
+        Serial.printf("Invalid humidity reading: %.1f%%\n", humidity);
+        return false;
+    }
+
+    if (light < 0 || light > 65535) {
+        Serial.printf("Invalid light reading: %.1f lux\n", light);
+        return false;
+    }
+
+    if (soil < 0 || soil > 100) {
+        Serial.printf("Invalid soil moisture reading: %d%%\n", soil);
+        return false;
+    }
+
+    if (salt < 100 || salt > 4500) {  
+        Serial.printf("Invalid salt reading: %d\n", salt);
+        return false;
+    }
+
+    // if (battery < 0 || battery > 100) {
+    //     Serial.printf("Invalid battery reading: %.1f%%\n", battery);
+    //     return false;
+    // }
+
+    return true;
+}
+
 void checkPlantStatus() {
     // Add debug for light reading
     #ifdef DEBUG_MODE
@@ -236,6 +275,21 @@ void checkPlantStatus() {
     float t = dht.readTemperature();
     float h = dht.readHumidity();
     float batt = readBattery();
+
+    #ifdef DEBUG_MODE
+    Serial.println(F("\nRaw Sensor Readings:"));
+    Serial.printf("Light: %.1f lux\n", luxRead);
+    Serial.printf("Soil Moisture: %d%%\n", soil);
+    Serial.printf("Salt: %d\n", salt);
+    Serial.printf("Temperature: %.1f°C\n", t);
+    Serial.printf("Humidity: %.1f%%\n", h);
+    Serial.printf("Battery: %.1f%%\n", batt);
+    #endif
+
+    if (!isValidSensorData(luxRead, soil, salt, t, h, batt)) {
+        Serial.println(F("Invalid sensor readings detected. Skipping update."));
+        return;
+    }
     
     // Create JSON document for MQTT message
     StaticJsonDocument<512> doc;

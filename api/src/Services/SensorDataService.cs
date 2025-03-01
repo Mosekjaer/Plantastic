@@ -44,10 +44,56 @@ namespace api.Services
             }
         }
 
+        /// <summary>
+        /// Validation of sensordata. This is also done in the esp32 itself, but a small server side check never hurts I guess.
+        /// </summary>
+        /// <param name="sensorData"></param>
+        /// <returns>boolean whether sensor data is within a valid range</returns>
+        private bool IsValidSensorData(SensorData sensorData)
+        {
+            if (sensorData.SoilMoisture < 0 || sensorData.SoilMoisture > 100)
+            {
+                _logger.LogWarning("Invalid soil moisture value: {SoilMoisture}", sensorData.SoilMoisture);
+                return false;
+            }
+
+            if (sensorData.Temperature < -5 || sensorData.Temperature > 55)
+            {
+                _logger.LogWarning("Invalid temperature value: {Temperature}°C", sensorData.Temperature);
+                return false;
+            }
+
+            if (sensorData.Humidity < 0 || sensorData.Humidity > 100)
+            {
+                _logger.LogWarning("Invalid humidity value: {Humidity}", sensorData.Humidity);
+                return false;
+            }
+
+            if (sensorData.Light < 0 || sensorData.Light > 70000)
+            {
+                _logger.LogWarning("Invalid light value: {Light}", sensorData.Light);
+                return false;
+            }
+
+            if (sensorData.Salt < 0 || sensorData.Salt > 5000)
+            {
+                _logger.LogWarning("Invalid salt value: {Salt}", sensorData.Salt);
+                return false;
+            }
+
+            return true;
+        }
+
         public async Task<bool> ProcessSensorDataAsync(string esp32Id, SensorData sensorData)
         {
             try
             {
+                if (!IsValidSensorData(sensorData))
+                {
+                    _logger.LogWarning("Sensor data validation failed for device: {Esp32Id}", esp32Id);
+                    return false;
+                }
+
                 // Validate the device exists and is active
                 if (!await _deviceService.ValidateDeviceAsync(esp32Id))
                 {

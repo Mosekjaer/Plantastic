@@ -25,12 +25,19 @@ namespace api.Extensions
                     ? $"mongodb://{mongoHost}:{mongoPort}"
                     : $"mongodb://{mongoUsername}:{mongoPassword}@{mongoHost}:{mongoPort}";
 
-            services.Configure<MongoDBSettings>(options =>
+            services.Configure<MongoDBSensorSettings>(options =>
             {
                 options.ConnectionString = mongoConnectionString;
 
                 options.DatabaseName = Environment.GetEnvironmentVariable("MONGODB_SENSOR_DATABASE") ?? "sensor_data_db";
                 options.CollectionName = Environment.GetEnvironmentVariable("MONGODB_COLLECTION") ?? "sensor_readings";
+            });
+
+            services.Configure<MongoDBUserSettings>(options =>
+            {
+                options.ConnectionString = mongoConnectionString;
+
+                options.DatabaseName = Environment.GetEnvironmentVariable("MONGODB_USER_DATABASE") ?? "sensor_data_db";
             });
 
             BsonSerializer.RegisterSerializer(new GuidSerializer(MongoDB.Bson.BsonType.String));

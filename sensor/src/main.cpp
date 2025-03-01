@@ -236,11 +236,6 @@ void checkPlantStatus() {
     float t = dht.readTemperature();
     float h = dht.readHumidity();
     float batt = readBattery();
-
-    Preferences preferences;
-    preferences.begin("plantcare", true);
-    String plantName = preferences.getString(NVS_PLANT_NAME, "");
-    preferences.end();
     
     // Create JSON document for MQTT message
     StaticJsonDocument<512> doc;
@@ -250,7 +245,6 @@ void checkPlantStatus() {
     doc["temperature"] = t;
     doc["humidity"] = h;
     doc["battery"] = batt;
-    doc["plant_name"] = plantName;
     
     // Get timestamp
     time_t now;

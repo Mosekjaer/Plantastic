@@ -38,6 +38,7 @@
 #define MQTT_CLIENT_ID "plant-notifier-%d" 
 #define MQTT_TOPIC_STATUS "sensor/%s/status"  // plant_name/status
 #define MQTT_TOPIC_CONTROL "plant/%s/control" 
+#define MQTT_TOPIC_REGISTER "sensor/%s/register"
 
 // NVS Keys - stored in PROGMEM
 static const char PROGMEM NVS_WIFI_SSID[] = "wifi_ssid";

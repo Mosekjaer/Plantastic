@@ -19,7 +19,7 @@ namespace api.Services
 
         public TokenService(
             IOptions<JwtSettings> jwtSettings,
-            IOptions<MongoDBSettings> mongoSettings)
+            IOptions<MongoDBUserSettings> mongoSettings)
         {
             _jwtSettings = jwtSettings.Value;
             var client = new MongoClient(mongoSettings.Value.ConnectionString);

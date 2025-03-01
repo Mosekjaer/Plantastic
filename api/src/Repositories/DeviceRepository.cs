@@ -10,7 +10,7 @@ namespace api.Repositories
     {
         private readonly IMongoCollection<Device> _deviceCollection;
 
-        public DeviceRepository(IOptions<MongoDBSettings> mongoDBSettings)
+        public DeviceRepository(IOptions<MongoDBSensorSettings> mongoDBSettings)
         {
             var mongoClient = new MongoClient(mongoDBSettings.Value.ConnectionString);
             var mongoDatabase = mongoClient.GetDatabase(mongoDBSettings.Value.DatabaseName);

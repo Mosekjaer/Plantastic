@@ -1,9 +1,8 @@
 ﻿namespace api.Configuration
 {
-    public class MongoDBSettings
+    public class MongoDBUserSettings
     {
         public string? ConnectionString { get; set; }
         public string? DatabaseName { get; set; }
-        public string? CollectionName { get; set; }
     }
 }

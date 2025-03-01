@@ -4,14 +4,144 @@
 #include <PubSubClient.h>
 #include <WiFiClientSecure.h>
 #include <mbedtls/md.h>  // For SHA-256
+#include <ArduinoJson.h>
 
 mqtt_handler::mqtt_handler() : client(espClient) {
+    #ifdef DEBUG_MODE
+    Serial.println("Initializing MQTT handler with SSL");
+    #endif
+    
     espClient.setCACert(MQTT_CERT);
+    espClient.setInsecure(); 
 }
 
 bool mqtt_handler::begin() {
     client.setServer(MQTT_HOST, MQTT_PORT);
     return connect();
+}
+
+bool mqtt_handler::registerDevice(const String& esp32Id, const String& plantName) {
+    #ifdef DEBUG_MODE
+    Serial.println("Starting device registration process");
+    Serial.print("Device ID: ");
+    Serial.println(esp32Id);
+    Serial.print("Plant Name: ");
+    Serial.println(plantName);
+    #endif
+
+    if (!client.connected()) {
+        #ifdef DEBUG_MODE
+        Serial.println("MQTT not connected, attempting to connect...");
+        #endif
+        if (!connect()) {
+            #ifdef DEBUG_MODE
+            Serial.println("Failed to connect to MQTT broker during registration");
+            #endif
+            return false;
+        }
+    }
+
+    StaticJsonDocument<200> doc;
+    doc["plantName"] = plantName;
+    doc["deviceId"] = esp32Id; 
+
+    String jsonString;
+    serializeJson(doc, jsonString);
+
+    char topic[256];
+    snprintf(topic, sizeof(topic), "sensor/%s/register", esp32Id.c_str());
+    
+    #ifdef DEBUG_MODE
+    Serial.print("Publishing registration to topic: ");
+    Serial.println(topic);
+    Serial.print("Message: ");
+    Serial.println(jsonString);
+    #endif
+
+    char responseTopic[256];
+    snprintf(responseTopic, sizeof(responseTopic), "sensor/%s/register/response", esp32Id.c_str());
+    
+    if (!client.subscribe(responseTopic)) {
+        #ifdef DEBUG_MODE
+        Serial.println("Failed to subscribe to response topic");
+        #endif
+        return false;
+    }
+
+    #ifdef DEBUG_MODE
+    Serial.println("Successfully subscribed to response topic");
+    #endif
+
+    bool registrationSuccess = false;
+    bool responseReceived = false;
+    
+    client.setCallback([&](char* topic, byte* payload, unsigned int length) {
+        #ifdef DEBUG_MODE
+        Serial.print("Received message on topic: ");
+        Serial.println(topic);
+        #endif
+
+        String response = String((char*)payload, length);
+        
+        #ifdef DEBUG_MODE
+        Serial.print("Response content: ");
+        Serial.println(response);
+        #endif
+
+        StaticJsonDocument<200> responseDoc;
+        DeserializationError error = deserializeJson(responseDoc, response);
+        
+        if (error) {
+            #ifdef DEBUG_MODE
+            Serial.print("Failed to parse registration response: ");
+            Serial.println(error.c_str());
+            #endif
+            return;
+        }
+
+        registrationSuccess = responseDoc["success"];
+        responseReceived = true;
+
+        #ifdef DEBUG_MODE
+        Serial.print("Registration success: ");
+        Serial.println(registrationSuccess ? "Yes" : "No");
+        if (!registrationSuccess && responseDoc.containsKey("error")) {
+            Serial.print("Error message: ");
+            Serial.println(responseDoc["error"].as<String>());
+        }
+        #endif
+    });
+
+    if (!client.publish(topic, jsonString.c_str())) {
+        #ifdef DEBUG_MODE
+        Serial.println("Failed to publish registration message");
+        #endif
+        client.unsubscribe(responseTopic);
+        return false;
+    }
+
+    #ifdef DEBUG_MODE
+    Serial.println("Registration message published successfully");
+    Serial.println("Waiting for response...");
+    #endif
+
+    unsigned long startTime = millis();
+    while (!responseReceived && (millis() - startTime < 5000)) {
+        client.loop();
+        delay(100);
+    }
+
+    client.unsubscribe(responseTopic);
+    client.setCallback(nullptr);
+
+    if (!responseReceived) {
+        #ifdef DEBUG_MODE
+        Serial.println("Registration timed out waiting for response");
+        #endif
+        return false;
+    }
+
+    return registrationSuccess;
 }
 
 bool mqtt_handler::connect() {
@@ -25,6 +155,23 @@ bool mqtt_handler::connect() {
     Serial.println(MQTT_HOST);
     Serial.print("MQTT Port: ");
     Serial.println(MQTT_PORT);
+    Serial.print("MQTT Username: ");
+    Serial.println(MQTT_USERNAME);
+    #endif
+
+    espClient.setTimeout(5000);
+    
+    if (!espClient.connect(MQTT_HOST, MQTT_PORT)) {
+        #ifdef DEBUG_MODE
+        Serial.println("SSL Connection failed");
+        Serial.print("SSL Error: ");
+        Serial.println(espClient.lastError(nullptr, 0));
+        #endif
+        return false;
+    }
+    
+    #ifdef DEBUG_MODE
+    Serial.println("SSL Connection established");
     #endif
 
     if (client.connect(clientId, MQTT_USERNAME, MQTT_PASSWORD)) {
@@ -90,7 +237,6 @@ bool mqtt_handler::sendMessage(const String& message) {
     Serial.print("Message length: ");
     Serial.println(message.length());
     
-    // Try publishing to a test topic first
     Serial.println("Trying test publish...");
     if (!client.publish("test/status", "test")) {
         Serial.println("Test publish failed");

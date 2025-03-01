@@ -102,6 +102,8 @@ namespace api.Extensions
 
             services.AddSingleton<ISensorDataRepository, SensorDataRepository>();
             services.AddSingleton<ISensorDataService, SensorDataService>();
+            services.AddSingleton<IDeviceRepository, DeviceRepository>();
+            services.AddSingleton<IDeviceService, DeviceService>();
             services.AddHostedService<MqttClientService>();
         }
 

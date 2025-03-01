@@ -14,6 +14,7 @@ public:
     mqtt_handler();
     bool begin();
     bool sendMessage(const String& message);
+    bool registerDevice(const String& esp32Id, const String& plantName);
     bool isConnected();
     void loop();
     String getFormattedClientId();

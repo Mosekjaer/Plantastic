@@ -1,0 +1,45 @@
+services:
+  api:
+    image: ${DOCKER_REGISTRY-}api
+    build:
+      context: src
+      dockerfile: Dockerfile
+    ports:
+      - "5000:8080" 
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development 
+      - MONGODB_HOST=${MONGODB_HOST}
+      - MONGODB_PORT=${MONGODB_PORT}
+      - MONGODB_USERNAME=${MONGODB_USERNAME}
+      - MONGODB_PASSWORD=${MONGODB_PASSWORD}
+      - MONGODB_SENSOR_DATABASE=${MONGODB_SENSOR_DATABASE}
+      - MONGODB_USER_DATABASE=${MONGODB_USER_DATABASE}
+      - MONGODB_COLLECTION=${MONGODB_COLLECTION}
+      - MQTT_HOST=${MQTT_HOST}
+      - MQTT_PORT=${MQTT_PORT}
+      - MQTT_USERNAME=${MQTT_USERNAME}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+    depends_on:
+      - mongo
+      - seq
+
+  mongo:
+    image: mongo:latest 
+    ports:
+      - "27017:27017"  
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD}
+    volumes:
+      - mongo_data:/data/db 
+
+  seq:
+    image: datalust/seq:latest
+    ports:
+      - "5341:80"  
+      - "5342:5341" 
+    environment:
+      - ACCEPT_EULA=Y  
+
+volumes:
+  mongo_data: 

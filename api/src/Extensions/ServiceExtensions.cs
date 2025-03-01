@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using MongoDB.Driver;
 
 namespace api.Extensions
 {
@@ -28,7 +29,6 @@ namespace api.Extensions
             services.Configure<MongoDBSensorSettings>(options =>
             {
                 options.ConnectionString = mongoConnectionString;
-
                 options.DatabaseName = Environment.GetEnvironmentVariable("MONGODB_SENSOR_DATABASE") ?? "sensor_data_db";
                 options.CollectionName = Environment.GetEnvironmentVariable("MONGODB_COLLECTION") ?? "sensor_readings";
             });
@@ -36,8 +36,21 @@ namespace api.Extensions
             services.Configure<MongoDBUserSettings>(options =>
             {
                 options.ConnectionString = mongoConnectionString;
-
                 options.DatabaseName = Environment.GetEnvironmentVariable("MONGODB_USER_DATABASE") ?? "sensor_data_db";
+            });
+
+            services.Configure<GeminiSettings>(options =>
+            {
+                options.ApiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? string.Empty;
+                options.Model = Environment.GetEnvironmentVariable("GEMINI_MODEL") ?? "gemini-2.0-flash-exp";
+            });
+
+            services.Configure<EmailSettings>(options =>
+            {
+                options.Username = Environment.GetEnvironmentVariable("EMAIL_USERNAME") ?? string.Empty;
+                options.AppPassword = Environment.GetEnvironmentVariable("EMAIL_APP_PASSWORD") ?? string.Empty;
+                options.SmtpHost = Environment.GetEnvironmentVariable("EMAIL_SMTP_HOST") ?? "smtp.gmail.com";
+                options.SmtpPort = int.Parse(Environment.GetEnvironmentVariable("EMAIL_SMTP_PORT") ?? "587");
             });
 
             BsonSerializer.RegisterSerializer(new GuidSerializer(MongoDB.Bson.BsonType.String));
@@ -64,7 +77,6 @@ namespace api.Extensions
                 // User settings
                 options.User.RequireUniqueEmail = true;
             });
-
 
             services.Configure<MqttSettings>(options =>
             {
@@ -107,11 +119,28 @@ namespace api.Extensions
 
             services.AddScoped<ITokenService, TokenService>();
 
+            services.AddSingleton<IMongoClient>(sp =>
+            {
+                return new MongoClient(mongoConnectionString);
+            });
+
+            services.AddSingleton<IMongoDatabase>(sp =>
+            {
+                var client = sp.GetRequiredService<IMongoClient>();
+                var dbName = Environment.GetEnvironmentVariable("MONGODB_SENSOR_DATABASE") ?? "sensor_data_db";
+                return client.GetDatabase(dbName);
+            });
+
             services.AddSingleton<ISensorDataRepository, SensorDataRepository>();
             services.AddSingleton<ISensorDataService, SensorDataService>();
             services.AddSingleton<IDeviceRepository, DeviceRepository>();
             services.AddSingleton<IDeviceService, DeviceService>();
+            services.AddSingleton<IDeviceNotificationRepository, DeviceNotificationRepository>();
+            services.AddSingleton<IUserService, UserService>();
+            services.AddSingleton<GeminiService>();
+            services.AddSingleton<EmailService>();
             services.AddHostedService<MqttClientService>();
+            services.AddHttpClient();
         }
 
         public static void AddOpenApi(this IServiceCollection services)

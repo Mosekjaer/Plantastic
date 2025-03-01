@@ -34,10 +34,6 @@ namespace api.Models
         [JsonPropertyName("battery")]
         public int Battery { get; set; }
 
-        [BsonElement("plant_name")]
-        [JsonPropertyName("plant_name")]
-        public string? PlantName { get; set; }
-
         [BsonElement("timestamp")]
         [JsonPropertyName("timestamp")]
         public long Timestamp { get; set; } 

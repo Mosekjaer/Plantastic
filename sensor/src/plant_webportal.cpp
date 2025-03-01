@@ -1,5 +1,6 @@
 #include "plant_webportal.h"
 #include <nvs_flash.h>
+#include <mqtt_handler.h>
 
 WebPortal webPortal;
 
@@ -14,7 +15,13 @@ static const char PROGMEM HTML_HEAD[] =
     "input,select{width:100%;padding:8px;margin:8px 0;box-sizing:border-box}"
     "button{background:#4CAF50;color:#fff;padding:10px;border:0;width:100%}"
     ".hint{color:#666;font-size:12px;margin:4px 0}"
-    "</style></head><body><div class='c'><h2>Plant Monitor Setup</h2>"
+    ".device-id{background:#f8f8f8;padding:10px;border-radius:4px;text-align:center;font-family:monospace;margin:10px 0}"
+    "</style></head><body><div class='c'>"
+    "<h2>Plant Monitor Setup</h2>"
+    "<div class='device-id'>"
+    "<strong>Your Device ID:</strong><br>%s"
+    "<p class='hint'>You'll need this ID to claim your device in the web interface</p>"
+    "</div>"
     "<form action='/save' method='post' id='setupForm'>";
 
 static const char PROGMEM HTML_TAIL[] = 
@@ -37,7 +44,12 @@ static const char PROGMEM HTML_SAVED[] =
     "</div></body></html>";
 
 WebPortal::WebPortal() : server(WEB_SERVER_PORT) {
-    preferences.begin("plantcare", false);
+    // Initialize preferences in constructor
+    if (!preferences.begin("plantcare", false)) {
+        #ifdef DEBUG_MODE
+        Serial.println("Failed to initialize preferences");
+        #endif
+    }
 }
 
 void WebPortal::begin() {
@@ -67,9 +79,8 @@ void WebPortal::begin() {
 }
 
 void WebPortal::handleRoot() {
-    WiFi.scanDelete();  // Clear previous scan results
+    WiFi.scanDelete(); 
     
-    // Start WiFi scan synchronously
     #ifdef DEBUG_MODE
     Serial.println(F("Starting WiFi scan..."));
     #endif
@@ -79,16 +90,22 @@ void WebPortal::handleRoot() {
     String form;
     form.reserve(2048);
     
-    form += FPSTR(HTML_HEAD);
+    uint64_t chipid = ESP.getEfuseMac();
+    uint32_t chip = (uint32_t)(chipid >> 32);
+    uint16_t chip1 = (uint16_t)(chipid);
+    char deviceId[20];
+    snprintf(deviceId, 20, "%08X%04X", chip, chip1);
     
-    // Add WiFi networks dropdown selector
+    char htmlHead[strlen_P(HTML_HEAD) + 32];  
+    sprintf_P(htmlHead, HTML_HEAD, deviceId);
+    form += htmlHead;
+    
     form += "<label>WiFi Network</label><select name='s' required>";
     if (n < 0) {
         form += F("<option value=''>Error scanning</option>");
     } else if (n == 0) {
         form += F("<option value=''>No networks found</option>");
     } else {
-        // Sort networks by signal strength
         struct Network {
             String ssid;
             int32_t rssi;
@@ -119,12 +136,11 @@ void WebPortal::handleRoot() {
     }
     form += "</select>";
     
-    // Add other form fields with labels and hints
-    form += F("<label>WiFi Password</label>"
-              "<input type='password' name='p' required>"
-              "<label>Plant Name</label>"
-              "<input name='n' placeholder='e.g. Living Room Plant' required>"
-              "<p class='hint'>Give your plant a unique name to identify it</p>");
+    form += F("<br><label>WiFi Password</label>"
+              "<br><input type='password' name='p' required>"
+              "<br><label>Plant Name</label>"
+              "<br><input name='n' placeholder='e.g. Living Room Plant' required>"
+              "<br><p class='hint'>Give your plant a unique name to identify it</p>");
     
     form += FPSTR(HTML_TAIL);
     
@@ -137,15 +153,51 @@ void WebPortal::handleRoot() {
 }
 
 void WebPortal::handleSave() {
-    saveCredentials(
-        server.arg("s"),  // SSID
-        server.arg("p"),  // Password
-        server.arg("n")
-    );
+    String ssid = server.arg("s");
+    String pass = server.arg("p");
+    String plantName = server.arg("n");
     
-    server.send(200, F("text/html"), FPSTR(HTML_SAVED));
-    delay(1000);
-    ESP.restart();
+    uint64_t chipid = ESP.getEfuseMac();
+    uint32_t chip = (uint32_t)(chipid >> 32);
+    uint16_t chip1 = (uint16_t)(chipid);
+    char deviceId[20];
+    snprintf(deviceId, 20, "%08X%04X", chip, chip1);
+    
+    saveCredentials(ssid, pass, plantName);
+    
+    WiFi.begin(ssid.c_str(), pass.c_str());
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+        delay(500);
+        attempts++;
+    }
+    
+    if (WiFi.status() == WL_CONNECTED) {
+        mqtt_handler mqtt;
+        if (mqtt.registerDevice(deviceId, plantName)) {
+            server.send(200, F("text/html"), FPSTR(HTML_SAVED));
+            delay(1000);
+            ESP.restart();
+        } else {
+            #ifdef DEBUG_MODE
+            Serial.println("Registration failed, clearing preferences");
+            #endif
+            
+            // Clear preferences
+            preferences.end();
+            delay(100);
+            nvs_flash_erase();
+            nvs_flash_init();
+            preferences.begin("plantcare", false);
+            preferences.clear();
+            
+            server.send(500, F("text/html"), F("Failed to register device. Please try again."));
+            delay(1000);
+            ESP.restart();
+        }
+    } else {
+        server.send(500, F("text/html"), F("Failed to connect to WiFi. Please check credentials."));
+    }
 }
 
 void WebPortal::handleNotFound() {
@@ -153,8 +205,7 @@ void WebPortal::handleNotFound() {
     server.send(302, F("text/plain"), "");
 }
 
-void WebPortal::saveCredentials(const String& ssid, const String& pass, 
-                              const String& plantName) {
+void WebPortal::saveCredentials(const String& ssid, const String& pass, const String& plantName) {
     #ifdef DEBUG_MODE
     Serial.println("Saving credentials:");
     Serial.print("Plant Name: "); Serial.println(plantName);
@@ -177,8 +228,6 @@ void WebPortal::saveCredentials(const String& ssid, const String& pass,
         Serial.println("Verifying saved values:");
         Serial.print("Saved Plant Name: "); Serial.println(preferences.getString(NVS_PLANT_NAME, ""));
         #endif
-
-        preferences.end();
     } else {
         #ifdef DEBUG_MODE
         Serial.println("Failed to open preferences for writing!");
@@ -191,39 +240,16 @@ bool WebPortal::isConfigured() {
 }
 
 String WebPortal::getWifiSSID() { 
-    if (!preferences.begin("plantcare", true)) {
-        return "";
-    }
-    String value = preferences.getString(NVS_WIFI_SSID, "");
-    preferences.end();
-    return value;
+    return preferences.getString(NVS_WIFI_SSID, "");
 }
 
 String WebPortal::getWifiPassword() { 
-    if (!preferences.begin("plantcare", true)) {
-        return "";
-    }
-    String value = preferences.getString(NVS_WIFI_PASS, "");
-    preferences.end();
-    return value;
+    return preferences.getString(NVS_WIFI_PASS, "");
 }
 
 String WebPortal::getPlantName() { 
-    if (!preferences.begin("plantcare", true)) {
-        #ifdef DEBUG_MODE
-        Serial.println("Failed to open preferences for reading plant name!");
-        #endif
-        return "";
-    }
-    String name = preferences.getString(NVS_PLANT_NAME, "");
-    #ifdef DEBUG_MODE
-    Serial.print("Retrieved Plant Name: "); Serial.println(name);
-    Serial.print("Name length: "); Serial.println(name.length());
-    #endif
-    preferences.end();
-    return name;
+    return preferences.getString(NVS_PLANT_NAME, "");
 }
-
 
 void WebPortal::setLastNotification(const String& message) {
     lastNotification = message;

@@ -45,6 +45,9 @@ namespace api.Models
         [BsonElement("esp32_id")]
         public string? Esp32Id { get; set; }
 
+        [BsonElement("device_id")]
+        public string? DeviceId { get; set; }
+
         [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }

@@ -11,22 +11,27 @@ namespace api.Models
         public string? Id { get; set; }
 
         [BsonElement("light")]
-        public int Light { get; set; }
+        [JsonPropertyName("light")]
+        public double Light { get; set; }
 
         [BsonElement("soil_moisture")]
         [JsonPropertyName("soil_moisture")]
         public int SoilMoisture { get; set; }
 
         [BsonElement("salt")]
+        [JsonPropertyName("salt")]
         public int Salt { get; set; }
 
         [BsonElement("temperature")]
-        public int Temperature { get; set; }
+        [JsonPropertyName("temperature")]
+        public double Temperature { get; set; }
 
         [BsonElement("humidity")]
+        [JsonPropertyName("humidity")]
         public int Humidity { get; set; }
 
         [BsonElement("battery")]
+        [JsonPropertyName("battery")]
         public int Battery { get; set; }
 
         [BsonElement("plant_name")]
@@ -34,6 +39,7 @@ namespace api.Models
         public string? PlantName { get; set; }
 
         [BsonElement("timestamp")]
+        [JsonPropertyName("timestamp")]
         public long Timestamp { get; set; } 
 
         [BsonElement("esp32_id")]

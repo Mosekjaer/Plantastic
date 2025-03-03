@@ -49,19 +49,27 @@ namespace api.Services
             {
                 try
                 {
+                    // Convert current time to user's local time
                     var userLocalTime = DateTime.UtcNow.AddMinutes(user.TimezoneOffsetMinutes);
-                    var nextNotificationTime = userLocalTime.Date.Add(user.NotificationTime);
                     
-                    if (userLocalTime.TimeOfDay >= user.NotificationTime)
+                    // Get today's notification time in user's local timezone
+                    var todayNotificationTime = userLocalTime.Date.Add(user.NotificationTime);
+                    
+                    // Convert notification time back to UTC for comparison
+                    var todayNotificationTimeUtc = todayNotificationTime.AddMinutes(-user.TimezoneOffsetMinutes);
+                    
+                    // Check if we're within ±5 minutes of the notification time
+                    var timeDiff = Math.Abs((utcNow - todayNotificationTimeUtc).TotalMinutes);
+                    if (timeDiff > 5)
                     {
-                        nextNotificationTime = nextNotificationTime.AddDays(1);
+                        continue; // Skip if it's not notification time
                     }
 
                     var devices = await _deviceService.GetDevicesByUserIdAsync(user.Id);
                     foreach (var device in devices)
                     {
-                        var analysisStartTime = DateTime.UtcNow.AddHours(-user.NotificationIntervalHours);
-                        
+                        // Always analyze last 24 hours of data
+                        var analysisStartTime = DateTime.UtcNow.AddHours(-24);
                         await _sensorDataService.AnalyzeDeviceDataAsync(device.Id, analysisStartTime);
                     }
                 }

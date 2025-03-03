@@ -134,7 +134,32 @@ namespace api.Services
                     return;
                 }
 
-                // Get sensor data for the specified time period
+                var user = await _userService.GetUserById(device.UserId);
+                if (user == null)
+                {
+                    _logger.LogError("User not found for device: {DeviceId}", deviceId);
+                    return;
+                }
+
+                // Check if enough time has passed since last notification
+                var notification = await _notificationRepository.GetByDeviceIdAsync(device.Id);
+                if (notification != null)
+                {
+                    var timeSinceLastNotification = DateTime.UtcNow - notification.LastNotificationSent;
+                    var minimumInterval = TimeSpan.FromHours(user.NotificationIntervalHours);
+                    
+                    if (timeSinceLastNotification < minimumInterval)
+                    {
+                        _logger.LogInformation(
+                            "Skipping analysis for device {DeviceId}. Time since last: {TimeSinceLastHours}h, Required interval: {RequiredIntervalHours}h",
+                            device.Id,
+                            timeSinceLastNotification.TotalHours,
+                            minimumInterval.TotalHours);
+                        return;
+                    }
+                }
+
+                // Get sensor data for the last 24 hours
                 var sensorDataList = await _sensorDataRepository.GetDataForDeviceAsync(deviceId, analysisStartTime);
                 if (!sensorDataList.Any())
                 {
@@ -142,7 +167,7 @@ namespace api.Services
                     return;
                 }
 
-                // Require at least 3 readings before performing analysis
+                // Require at least 3 readings
                 const int MinimumReadingsRequired = 3;
                 if (sensorDataList.Count < MinimumReadingsRequired)
                 {
@@ -151,83 +176,36 @@ namespace api.Services
                     return;
                 }
 
-                var user = await _userService.GetUserById(device.UserId);
-                if (user == null)
+                // Proceed with analysis since we're at the right time and have enough data
+                var analysis = await _geminiService.AnalyzePlantHealthAsync(
+                    sensorDataList,
+                    device,
+                    user.PreferredLanguage
+                );
+
+                if (analysis.NeedsAttention)
                 {
-                    _logger.LogError("User not found for device: {DeviceId}", deviceId);
-                    return;
-                }
-
-                // Check if it's time to analyze based on user preferences
-                var notification = await _notificationRepository.GetByDeviceIdAsync(device.Id);
-                var canAnalyze = true;
-
-                if (notification != null)
-                {
-                    var timeSinceLastNotification = DateTime.UtcNow - notification.LastNotificationSent;
-                    var minimumInterval = TimeSpan.FromHours(user.NotificationIntervalHours);
-                    
-                    // Convert user's preferred notification time to UTC
-                    var userLocalTime = DateTime.UtcNow.AddMinutes(user.TimezoneOffsetMinutes);
-                    var preferredTimeToday = userLocalTime.Date.Add(user.NotificationTime);
-                    var preferredTimeUtc = preferredTimeToday.AddMinutes(-user.TimezoneOffsetMinutes);
-                    
-                    // If we're past today's preferred time, get tomorrow's
-                    if (DateTime.UtcNow > preferredTimeUtc)
-                    {
-                        preferredTimeUtc = preferredTimeUtc.AddDays(1);
-                    }
-
-                    // Only analyze if:
-                    // 1. Enough time has passed since last notification (based on user's interval)
-                    // 2. We're within 5 minutes of user's preferred notification time
-                    canAnalyze = timeSinceLastNotification >= minimumInterval &&
-                                Math.Abs((DateTime.UtcNow - preferredTimeUtc).TotalMinutes) <= 5;
-                    
-                    if (!canAnalyze)
-                    {
-                        _logger.LogInformation(
-                            "Skipping analysis for device {DeviceId}. Time since last: {TimeSinceLastHours}h, Required interval: {RequiredIntervalHours}h, Next analysis time: {NextPreferredTime}",
-                            device.Id,
-                            timeSinceLastNotification.TotalHours,
-                            minimumInterval.TotalHours,
-                            preferredTimeUtc);
-                        return;
-                    }
-                }
-
-                // Only proceed with Gemini analysis if it's the right time
-                if (canAnalyze)
-                {
-                    var analysis = await _geminiService.AnalyzePlantHealthAsync(
-                        sensorDataList,
-                        device,
+                    await _emailService.SendPlantHealthEmailAsync(
+                        user.Email,
+                        device.Name,
+                        analysis,
                         user.PreferredLanguage
                     );
 
-                    if (analysis.NeedsAttention)
+                    // Update or create notification record
+                    if (notification == null)
                     {
-                        await _emailService.SendPlantHealthEmailAsync(
-                            user.Email,
-                            device.Name,
-                            analysis,
-                            user.PreferredLanguage
-                        );
-
-                        if (notification == null)
+                        notification = new DeviceNotification
                         {
-                            notification = new DeviceNotification
-                            {
-                                DeviceId = device.Id,
-                                LastNotificationSent = DateTime.UtcNow
-                            };
-                            await _notificationRepository.CreateAsync(notification);
-                        }
-                        else
-                        {
-                            notification.LastNotificationSent = DateTime.UtcNow;
-                            await _notificationRepository.UpdateAsync(notification.Id!, notification);
-                        }
+                            DeviceId = device.Id,
+                            LastNotificationSent = DateTime.UtcNow
+                        };
+                        await _notificationRepository.CreateAsync(notification);
+                    }
+                    else
+                    {
+                        notification.LastNotificationSent = DateTime.UtcNow;
+                        await _notificationRepository.UpdateAsync(notification.Id!, notification);
                     }
                 }
             }

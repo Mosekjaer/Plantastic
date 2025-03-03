@@ -142,6 +142,15 @@ namespace api.Services
                     return;
                 }
 
+                // Require at least 3 readings before performing analysis
+                const int MinimumReadingsRequired = 3;
+                if (sensorDataList.Count < MinimumReadingsRequired)
+                {
+                    _logger.LogInformation("Not enough readings for analysis. Device: {DeviceId}, Readings: {ReadingCount}/{MinimumRequired}", 
+                        deviceId, sensorDataList.Count, MinimumReadingsRequired);
+                    return;
+                }
+
                 var user = await _userService.GetUserById(device.UserId);
                 if (user == null)
                 {
@@ -149,35 +158,76 @@ namespace api.Services
                     return;
                 }
 
-                var analysis = await _geminiService.AnalyzePlantHealthAsync(
-                    sensorDataList,
-                    device,
-                    user.PreferredLanguage
-                );
+                // Check if it's time to analyze based on user preferences
+                var notification = await _notificationRepository.GetByDeviceIdAsync(device.Id);
+                var canAnalyze = true;
 
-                if (analysis.NeedsAttention)
+                if (notification != null)
                 {
-                    await _emailService.SendPlantHealthEmailAsync(
-                        user.Email,
-                        device.Name,
-                        analysis,
+                    var timeSinceLastNotification = DateTime.UtcNow - notification.LastNotificationSent;
+                    var minimumInterval = TimeSpan.FromHours(user.NotificationIntervalHours);
+                    
+                    // Convert user's preferred notification time to UTC
+                    var userLocalTime = DateTime.UtcNow.AddMinutes(user.TimezoneOffsetMinutes);
+                    var preferredTimeToday = userLocalTime.Date.Add(user.NotificationTime);
+                    var preferredTimeUtc = preferredTimeToday.AddMinutes(-user.TimezoneOffsetMinutes);
+                    
+                    // If we're past today's preferred time, get tomorrow's
+                    if (DateTime.UtcNow > preferredTimeUtc)
+                    {
+                        preferredTimeUtc = preferredTimeUtc.AddDays(1);
+                    }
+
+                    // Only analyze if:
+                    // 1. Enough time has passed since last notification (based on user's interval)
+                    // 2. We're within 5 minutes of user's preferred notification time
+                    canAnalyze = timeSinceLastNotification >= minimumInterval &&
+                                Math.Abs((DateTime.UtcNow - preferredTimeUtc).TotalMinutes) <= 5;
+                    
+                    if (!canAnalyze)
+                    {
+                        _logger.LogInformation(
+                            "Skipping analysis for device {DeviceId}. Time since last: {TimeSinceLastHours}h, Required interval: {RequiredIntervalHours}h, Next analysis time: {NextPreferredTime}",
+                            device.Id,
+                            timeSinceLastNotification.TotalHours,
+                            minimumInterval.TotalHours,
+                            preferredTimeUtc);
+                        return;
+                    }
+                }
+
+                // Only proceed with Gemini analysis if it's the right time
+                if (canAnalyze)
+                {
+                    var analysis = await _geminiService.AnalyzePlantHealthAsync(
+                        sensorDataList,
+                        device,
                         user.PreferredLanguage
                     );
 
-                    var notification = await _notificationRepository.GetByDeviceIdAsync(device.Id);
-                    if (notification == null)
+                    if (analysis.NeedsAttention)
                     {
-                        notification = new DeviceNotification
+                        await _emailService.SendPlantHealthEmailAsync(
+                            user.Email,
+                            device.Name,
+                            analysis,
+                            user.PreferredLanguage
+                        );
+
+                        if (notification == null)
                         {
-                            DeviceId = device.Id,
-                            LastNotificationSent = DateTime.UtcNow
-                        };
-                        await _notificationRepository.CreateAsync(notification);
-                    }
-                    else
-                    {
-                        notification.LastNotificationSent = DateTime.UtcNow;
-                        await _notificationRepository.UpdateAsync(notification.Id!, notification);
+                            notification = new DeviceNotification
+                            {
+                                DeviceId = device.Id,
+                                LastNotificationSent = DateTime.UtcNow
+                            };
+                            await _notificationRepository.CreateAsync(notification);
+                        }
+                        else
+                        {
+                            notification.LastNotificationSent = DateTime.UtcNow;
+                            await _notificationRepository.UpdateAsync(notification.Id!, notification);
+                        }
                     }
                 }
             }

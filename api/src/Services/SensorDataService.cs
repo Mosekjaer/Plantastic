@@ -114,16 +114,6 @@ namespace api.Services
                 await _sensorDataRepository.CreateAsync(sensorData);
                 _logger.LogInformation("Sensor data saved for device: {DeviceName} (ESP32 ID: {Esp32Id})", device.Name, esp32Id);
 
-                // Check if we should analyze with Gemini (24-hour cooldown)
-                var lastNotification = await _notificationRepository.GetByDeviceIdAsync(device.Id);
-                var shouldAnalyze = lastNotification == null || 
-                    (DateTime.UtcNow - lastNotification.LastNotificationSent).TotalHours >= 24;
-
-                if (shouldAnalyze)
-                {
-                    await AnalyzeAndNotifyAsync(sensorData, device);
-                }
-
                 return true;
             }
             catch (Exception ex)
@@ -133,26 +123,45 @@ namespace api.Services
             }
         }
 
-        private async Task AnalyzeAndNotifyAsync(SensorData sensorData, Device device)
+        public async Task AnalyzeDeviceDataAsync(string deviceId, DateTime analysisStartTime)
         {
             try
             {
-                var analysis = await _geminiService.AnalyzePlantHealthAsync(sensorData, device);
-                
+                var device = await _deviceService.GetDeviceByIdAsync(deviceId);
+                if (device == null)
+                {
+                    _logger.LogError("Device not found for analysis: {DeviceId}", deviceId);
+                    return;
+                }
+
+                // Get sensor data for the specified time period
+                var sensorDataList = await _sensorDataRepository.GetDataForDeviceAsync(deviceId, analysisStartTime);
+                if (!sensorDataList.Any())
+                {
+                    _logger.LogInformation("No sensor data to analyze for device: {DeviceId}", deviceId);
+                    return;
+                }
+
+                var user = await _userService.GetUserById(device.UserId);
+                if (user == null)
+                {
+                    _logger.LogError("User not found for device: {DeviceId}", deviceId);
+                    return;
+                }
+
+                var analysis = await _geminiService.AnalyzePlantHealthAsync(
+                    sensorDataList,
+                    device,
+                    user.PreferredLanguage
+                );
+
                 if (analysis.NeedsAttention)
                 {
-                    var userEmail = await _userService.GetUserEmailById(device.UserId);
-                    if (string.IsNullOrEmpty(userEmail))
-                    {
-                        _logger.LogError("Could not find email for user: {UserId}, device: {DeviceId}", device.UserId, device.Id);
-                        return;
-                    }
-
-                    // Send email notification
                     await _emailService.SendPlantHealthEmailAsync(
-                        userEmail,
+                        user.Email,
                         device.Name,
-                        analysis
+                        analysis,
+                        user.PreferredLanguage
                     );
 
                     var notification = await _notificationRepository.GetByDeviceIdAsync(device.Id);
@@ -174,7 +183,7 @@ namespace api.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error analyzing plant health data for device: {DeviceId}", device.Id);
+                _logger.LogError(ex, "Error analyzing data for device: {DeviceId}", deviceId);
             }
         }
     }

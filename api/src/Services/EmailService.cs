@@ -19,7 +19,7 @@ namespace api.Services
             _logger = logger;
         }
 
-        public async Task SendPlantHealthEmailAsync(string userEmail, string plantName, PlantHealthAnalysis analysis)
+        public async Task SendPlantHealthEmailAsync(string userEmail, string plantName, PlantHealthAnalysis analysis, string language)
         {
             try
             {

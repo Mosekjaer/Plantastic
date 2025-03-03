@@ -80,15 +80,35 @@ void setup() {
     preferences.begin("plantcare", false);
     
     // Power up sensors
-    // Added a delay after power up to make sure the sensors power up in time.
-    Serial.println("Powering up sensors...");
+    #ifdef DEBUG_MODE
+    Serial.println("Setting up sensor pins...");
+    #endif
+    
     pinMode(POWER_CTRL, OUTPUT);
+    pinMode(DHT_PIN, INPUT);
+    pinMode(SALT_PIN, INPUT);
+    pinMode(SOIL_PIN, INPUT);
+    
+    #ifdef DEBUG_MODE
+    Serial.println("Powering up sensors...");
+    Serial.printf("POWER_CTRL pin: %d\n", POWER_CTRL);
+    Serial.printf("DHT_PIN: %d\n", DHT_PIN);
+    Serial.printf("SALT_PIN: %d\n", SALT_PIN);
+    Serial.printf("SOIL_PIN: %d\n", SOIL_PIN);
+    #endif
+    
     digitalWrite(POWER_CTRL, 1);
-    delay(1000); 
+    
+    #ifdef DEBUG_MODE
+    Serial.println("Waiting for sensors to stabilize...");
+    #endif
+    delay(5000); 
     
     // Initialize sensors before checking configuration
     Serial.println("Initializing sensors...");
-    initializeSensors();
+    if (!initializeSensors()) {
+        Serial.println("Warning: Some sensors failed to initialize properly");
+    }
     
     // If not configured, enter config mode
     if (!preferences.getString(NVS_WIFI_SSID, "").length()) {
@@ -124,9 +144,37 @@ void loop() {
 bool initializeSensors() {
     bool success = true;
     
-    // Initialize DHT first
-    dht.begin();
+    // Test analog pins first
+    #ifdef DEBUG_MODE
+    Serial.println("\nTesting analog pins...");
+    Serial.printf("SALT_PIN (GPIO%d) raw value: %d\n", SALT_PIN, analogRead(SALT_PIN));
+    Serial.printf("SOIL_PIN (GPIO%d) raw value: %d\n", SOIL_PIN, analogRead(SOIL_PIN));
+    Serial.printf("BAT_ADC (GPIO%d) raw value: %d\n", BAT_ADC, analogRead(BAT_ADC));
+    Serial.println("ADC readings above should be non-zero if pins are working\n");
+    #endif
     
+    // Initialize DHT first
+    #ifdef DEBUG_MODE
+    Serial.println("Initializing DHT sensor...");
+    #endif
+    dht.begin();
+    delay(2000);
+
+    // Test DHT readings
+    #ifdef DEBUG_MODE
+    float test_temp = dht.readTemperature();
+    float test_hum = dht.readHumidity();
+    Serial.print("Initial DHT readings - Temp: ");
+    Serial.print(test_temp);
+    Serial.print("°C, Humidity: ");
+    Serial.print(test_hum);
+    Serial.println("%");
+    if (isnan(test_temp) || isnan(test_hum)) {
+        Serial.println("Failed to read from DHT sensor!");
+        success = false;
+    }
+    #endif
+
     // Initialize I2C and verify success
     Wire.begin(I2C_SDA, I2C_SCL);
     
@@ -153,7 +201,7 @@ bool initializeSensors() {
     
     // Try reinitializing BH1750 with explicit power on
     lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE);
-    delay(150); // Add delay after mode change
+    delay(1000); // Add delay after mode change
     
     // Test read to verify sensor
     float testRead = lightMeter.readLightLevel();
@@ -242,52 +290,66 @@ bool isValidSensorData(float light, uint16_t soil, uint32_t salt, float temp, fl
         return false;
     }
 
-    if (salt < 100 || salt > 4500) {  
+    if (salt > 1000) { 
         Serial.printf("Invalid salt reading: %d\n", salt);
         return false;
     }
-
-    // if (battery < 0 || battery > 100) {
-    //     Serial.printf("Invalid battery reading: %.1f%%\n", battery);
-    //     return false;
-    // }
 
     return true;
 }
 
 void checkPlantStatus() {
-    // Add debug for light reading
-    #ifdef DEBUG_MODE
-    Serial.println("Reading light level...");
-    #endif
-    float luxRead = lightMeter.readLightLevel();
-    if (luxRead < 0) {
-        Serial.println("Error reading light sensor!");
-        luxRead = 0;
+    float luxRead;
+    uint16_t soil;
+    uint32_t salt;
+    float t;
+    float h;
+    float batt;
+    bool validData = false;
+
+    for (int i = 0; i < 5 && !validData; ++i) {
+        // Add debug for light reading
+        #ifdef DEBUG_MODE
+        Serial.println("Reading light level...");
+        #endif
+        luxRead = lightMeter.readLightLevel();
+        if (luxRead < 0) {
+            Serial.println("Error reading light sensor!");
+            luxRead = 0;
+        }
+        #ifdef DEBUG_MODE
+        Serial.print("Light level raw: ");
+        Serial.println(luxRead);
+        #endif
+        
+        soil = readSoil();
+        salt = readSalt();
+        t = dht.readTemperature();
+        h = dht.readHumidity();
+        batt = readBattery();
+
+        #ifdef DEBUG_MODE
+        Serial.println(F("\nRaw Sensor Readings:"));
+        Serial.printf("Light: %.1f lux\n", luxRead);
+        Serial.printf("Soil Moisture: %d%%\n", soil);
+        Serial.printf("Salt: %d\n", salt);
+        Serial.printf("Temperature: %.1f°C\n", t);
+        Serial.printf("Humidity: %.1f%%\n", h);
+        Serial.printf("Battery: %.1f%%\n", batt);
+        #endif
+
+        validData = isValidSensorData(luxRead, soil, salt, t, h, batt);
+
+        if (!validData) {
+            Serial.println(F("Invalid sensor readings detected. Retrying..."));
+            delay(1000); // Wait 1 second before retrying
+        } else {
+            Serial.println(F("Valid sensor readings obtained."));
+        }
     }
-    #ifdef DEBUG_MODE
-    Serial.print("Light level raw: ");
-    Serial.println(luxRead);
-    #endif
-    
-    uint16_t soil = readSoil();
-    uint32_t salt = readSalt();
-    float t = dht.readTemperature();
-    float h = dht.readHumidity();
-    float batt = readBattery();
 
-    #ifdef DEBUG_MODE
-    Serial.println(F("\nRaw Sensor Readings:"));
-    Serial.printf("Light: %.1f lux\n", luxRead);
-    Serial.printf("Soil Moisture: %d%%\n", soil);
-    Serial.printf("Salt: %d\n", salt);
-    Serial.printf("Temperature: %.1f°C\n", t);
-    Serial.printf("Humidity: %.1f%%\n", h);
-    Serial.printf("Battery: %.1f%%\n", batt);
-    #endif
-
-    if (!isValidSensorData(luxRead, soil, salt, t, h, batt)) {
-        Serial.println(F("Invalid sensor readings detected. Skipping update."));
+    if (!validData) {
+        Serial.println(F("Failed to get valid sensor readings after multiple attempts. Skipping update."));
         return;
     }
     
@@ -348,19 +410,62 @@ float readBattery() {
 }
 
 uint32_t readSalt() {
-    uint8_t samples = 120;
+    uint8_t samples = 120;  // Increased from 60 to 120
     uint32_t humi = 0;
     uint16_t array[120];
     
+    #ifdef DEBUG_MODE
+    Serial.println("Reading salt sensor values:");
+    #endif
+    
     for (int i = 0; i < samples; i++) {
         array[i] = analogRead(SALT_PIN);
-        delay(2);
+        #ifdef DEBUG_MODE
+        if (i < 5) {  // Print first 5 readings only
+            Serial.print("Sample ");
+            Serial.print(i);
+            Serial.print(": ");
+            Serial.println(array[i]);
+        }
+        #endif
+        delay(2);  // Reduced from 5ms to 2ms
     }
     std::sort(array, array + samples);
+    
+    // Check if all readings are zero
+    bool all_zero = true;
+    for (int i = 0; i < samples; i++) {
+        if (array[i] != 0) {
+            all_zero = false;
+            break;
+        }
+    }
+    
+    #ifdef DEBUG_MODE
+    if (all_zero) {
+        Serial.println("Warning: All salt sensor readings are zero!");
+    }
+    #endif
+    
     for (int i = 0; i < samples; i++) {
         if (i == 0 || i == samples - 1) continue;
         humi += array[i];
     }
     humi /= samples - 2;
+    
+    #ifdef DEBUG_MODE
+    Serial.print("Final salt value: ");
+    Serial.println(humi);
+    if (humi < 201) {
+        Serial.println("Salt level: NEEDED");
+    } else if (humi < 251) {
+        Serial.println("Salt level: LOW");
+    } else if (humi < 351) {
+        Serial.println("Salt level: OPTIMAL");
+    } else {
+        Serial.println("Salt level: TOO HIGH");
+    }
+    #endif
+    
     return humi;
 }

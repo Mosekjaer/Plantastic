@@ -34,5 +34,31 @@ namespace api.Services
                 return null;
             }
         }
+
+        public async Task<ApplicationUser?> GetUserById(string userId)
+        {
+            try
+            {
+                return await _users.Find(x => x.Id == userId).FirstOrDefaultAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving user for ID: {UserId}", userId);
+                return null;
+            }
+        }
+
+        public async Task<List<ApplicationUser>> GetAllUsersAsync()
+        {
+            try
+            {
+                return await _users.Find(FilterDefinition<ApplicationUser>.Empty).ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving all users");
+                return new List<ApplicationUser>();
+            }
+        }
     }
 } 

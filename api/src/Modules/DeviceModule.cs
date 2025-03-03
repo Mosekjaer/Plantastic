@@ -60,7 +60,7 @@ namespace api.Modules
                         return Results.Unauthorized();
                     }
 
-                    var devices = await deviceService.GetUserDevicesAsync(userId);
+                    var devices = await deviceService.GetDevicesByUserIdAsync(userId);
                     return Results.Ok(devices);
                 }
                 catch (Exception ex)

@@ -31,5 +31,18 @@ namespace api.Repositories
         {
             return await _sensorDataCollection.Find(x => x.Id == id).FirstOrDefaultAsync();
         }
+
+        public async Task<List<SensorData>> GetDataForDeviceAsync(string deviceId, DateTime startTime)
+        {
+            var filter = Builders<SensorData>.Filter.And(
+                Builders<SensorData>.Filter.Eq(x => x.DeviceId, deviceId),
+                Builders<SensorData>.Filter.Gte(x => x.CreatedAt, startTime)
+            );
+
+            return await _sensorDataCollection
+                .Find(filter)
+                .SortBy(x => x.CreatedAt)
+                .ToListAsync();
+        }
     }
 }

@@ -1,5 +1,6 @@
 using api.Interfaces;
 using api.Models;
+using Microsoft.Extensions.Logging;
 
 namespace api.Services
 {
@@ -8,7 +9,9 @@ namespace api.Services
         private readonly IDeviceRepository _deviceRepository;
         private readonly ILogger<DeviceService> _logger;
 
-        public DeviceService(IDeviceRepository deviceRepository, ILogger<DeviceService> logger)
+        public DeviceService(
+            IDeviceRepository deviceRepository,
+            ILogger<DeviceService> logger)
         {
             _deviceRepository = deviceRepository;
             _logger = logger;
@@ -33,19 +36,43 @@ namespace api.Services
             }
         }
 
-        public async Task<Device?> GetDeviceByEsp32IdAsync(string esp32Id)
-        {
-            return await _deviceRepository.GetByEsp32IdAsync(esp32Id);
-        }
-
-        public async Task<List<Device>> GetUserDevicesAsync(string userId)
-        {
-            return await _deviceRepository.GetByUserIdAsync(userId);
-        }
-
         public async Task<Device?> GetDeviceByIdAsync(string id)
         {
-            return await _deviceRepository.GetByIdAsync(id);
+            try
+            {
+                return await _deviceRepository.GetByIdAsync(id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving device by ID: {DeviceId}", id);
+                return null;
+            }
+        }
+
+        public async Task<Device?> GetDeviceByEsp32IdAsync(string esp32Id)
+        {
+            try
+            {
+                return await _deviceRepository.GetByEsp32IdAsync(esp32Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving device by ESP32 ID: {Esp32Id}", esp32Id);
+                return null;
+            }
+        }
+
+        public async Task<List<Device>> GetDevicesByUserIdAsync(string userId)
+        {
+            try
+            {
+                return await _deviceRepository.GetByUserIdAsync(userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving devices for user: {UserId}", userId);
+                return new List<Device>();
+            }
         }
 
         public async Task UpdateDeviceAsync(string id, Device device)
@@ -55,14 +82,29 @@ namespace api.Services
 
         public async Task<bool> ValidateDeviceAsync(string esp32Id)
         {
-            var device = await _deviceRepository.GetByEsp32IdAsync(esp32Id);
-            if (device == null || !device.IsActive)
+            try
             {
+                var device = await _deviceRepository.GetByEsp32IdAsync(esp32Id);
+                if (device == null)
+                {
+                    _logger.LogWarning("Device not found: {Esp32Id}", esp32Id);
+                    return false;
+                }
+
+                if (!device.IsActive)
+                {
+                    _logger.LogWarning("Device is inactive: {Esp32Id}", esp32Id);
+                    return false;
+                }
+
+                await _deviceRepository.UpdateLastSeenAsync(esp32Id);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating device: {Esp32Id}", esp32Id);
                 return false;
             }
-
-            await _deviceRepository.UpdateLastSeenAsync(esp32Id);
-            return true;
         }
     }
 } 

@@ -24,7 +24,7 @@ namespace api.Services
             _httpClient = httpClient;
         }
 
-        public async Task<PlantHealthAnalysis> AnalyzePlantHealthAsync(SensorData sensorData, Device device)
+        public async Task<PlantHealthAnalysis> AnalyzePlantHealthAsync(List<SensorData> sensorDataList, Device device, string language)
         {
             try
             {
@@ -32,6 +32,20 @@ namespace api.Services
                 var url = $"{API_BASE_URL}{_settings.Model}:generateContent?key={apiKey}";
 
                 var plantName = device.Name;
+                
+                // Format sensor data points with timestamps
+                var sensorDataText = string.Join("\n", sensorDataList.Select(data =>
+                {
+                    var timestamp = DateTimeOffset.FromUnixTimeSeconds(data.Timestamp).UtcDateTime;
+                    return $@"Time: {timestamp:yyyy-MM-dd HH:mm:ss} UTC
+    - Light Level: {data.Light} lux
+    - Soil Moisture: {data.SoilMoisture}%
+    - Temperature: {data.Temperature}°C
+    - Humidity: {data.Humidity}%";
+    //TODO: Support this later on.
+    //- Salt Level: {data.Salt}
+    //- Battery Level: {data.Battery}%";
+                }));
 
                 var request = new
                 {
@@ -43,16 +57,16 @@ namespace api.Services
                             {
                                 new
                                 {
-                                    text = $@"You are a friendly and knowledgeable plant care expert. Analyze the sensor data for this {plantName} and provide a detailed, caring assessment.
+                                    text = $@"You are a friendly and knowledgeable plant care expert. Analyze the sensor data history for this {plantName} and provide a detailed, caring assessment in {language} language.
 
-                                    Sensor Data:
-                                    - Light Level: {sensorData.Light} lux
-                                    - Soil Moisture: {sensorData.SoilMoisture}%
-                                    - Temperature: {sensorData.Temperature}°C
-                                    - Humidity: {sensorData.Humidity}%
-                                    - Salt Level: {sensorData.Salt}
+                                    Plant: {plantName}
+                                    Time Period: {sensorDataList.Count} measurements over {(DateTimeOffset.FromUnixTimeSeconds(sensorDataList.Last().Timestamp) - DateTimeOffset.FromUnixTimeSeconds(sensorDataList.First().Timestamp)).TotalHours:F1} hours
+
+                                    Sensor Data History:
+                                    {sensorDataText}
 
                                     Consider the specific needs of {plantName} and provide a thorough analysis that would be helpful and reassuring to a plant owner.
+                                    Analyze trends over time and identify any concerning patterns.
                                     If there are issues, explain them clearly but gently, and provide specific, actionable recommendations.
                                     
                                     For the health status, use friendly phrases like:
@@ -61,7 +75,9 @@ namespace api.Services
                                     - 'Needs a little extra care and attention'
                                     - 'Could use some help to get back to optimal health'
                                     
-                                    For issues and recommendations, be specific and encouraging, explaining why each adjustment will help."
+                                    For issues and recommendations, be specific and encouraging, explaining why each adjustment will help.
+                                    
+                                    Please provide the response in {language} language."
                                 }
                             }
                         }

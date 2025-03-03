@@ -4,7 +4,8 @@ namespace api.Interfaces
 {
     public interface ISensorDataService
     {
-        Task<bool> ProcessSensorDataAsync(string esp32Id, SensorData sensorData);
         Task<List<SensorData>> GetAllSensorDataAsync();
+        Task<bool> ProcessSensorDataAsync(string esp32Id, SensorData sensorData);
+        Task AnalyzeDeviceDataAsync(string deviceId, DateTime analysisStartTime);
     }
 }

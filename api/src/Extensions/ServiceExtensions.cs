@@ -140,6 +140,7 @@ namespace api.Extensions
             services.AddSingleton<GeminiService>();
             services.AddSingleton<EmailService>();
             services.AddHostedService<MqttClientService>();
+            services.AddHostedService<PlantHealthAnalysisService>();
             services.AddHttpClient();
         }
 

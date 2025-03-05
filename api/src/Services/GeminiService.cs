@@ -37,14 +37,30 @@ namespace api.Services
                 var sensorDataText = string.Join("\n", sensorDataList.Select(data =>
                 {
                     var timestamp = DateTimeOffset.FromUnixTimeSeconds(data.Timestamp).UtcDateTime;
-                    return $@"Time: {timestamp:yyyy-MM-dd HH:mm:ss} UTC
-    - Light Level: {data.Light} lux
-    - Soil Moisture: {data.SoilMoisture}%
-    - Temperature: {data.Temperature}°C
-    - Humidity: {data.Humidity}%";
-    //TODO: Support this later on.
-    //- Salt Level: {data.Salt}
-    //- Battery Level: {data.Battery}%";
+                    var sensorLines = new List<string>();
+                    
+                    sensorLines.Add($"Time: {timestamp:yyyy-MM-dd HH:mm:ss} UTC");
+                    
+                    // Only include sensors that the user has enabled
+                    if (device.IncludeLightSensor)
+                        sensorLines.Add($"    - Light Level: {data.Light} lux");
+                        
+                    if (device.IncludeMoistureSensor)
+                        sensorLines.Add($"    - Soil Moisture: {data.SoilMoisture}%");
+                        
+                    if (device.IncludeTemperatureSensor)
+                        sensorLines.Add($"    - Temperature: {data.Temperature}°C");
+                        
+                    if (device.IncludeHumiditySensor)
+                        sensorLines.Add($"    - Humidity: {data.Humidity}%");
+                        
+                    if (device.IncludeSaltSensor)
+                        sensorLines.Add($"    - Salt Level: {data.Salt}");
+                        
+                    if (device.IncludeBatterySensor)
+                        sensorLines.Add($"    - Battery Level: {data.Battery}%");
+                        
+                    return string.Join("\n", sensorLines);
                 }));
 
                 var request = new

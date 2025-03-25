@@ -12,7 +12,7 @@ namespace api.Services
         private readonly HttpClient _httpClient;
         private readonly ILogger<GeminiService> _logger;
         private readonly GeminiSettings _settings;
-        private const string API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/";
+        private const string API_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 
         public GeminiService(
             ILogger<GeminiService> logger,
@@ -28,8 +28,10 @@ namespace api.Services
         {
             try
             {
-                var apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? _settings.ApiKey;
-                var url = $"{API_BASE_URL}{_settings.Model}:generateContent?key={apiKey}";
+                var apiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY") ?? _settings.ApiKey;
+                _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+                _httpClient.DefaultRequestHeaders.Add("HTTP-Referer", "https://plantastic.app");
+                _httpClient.DefaultRequestHeaders.Add("X-Title", "Plantastic");
 
                 var plantName = device.Name;
                 
@@ -65,122 +67,111 @@ namespace api.Services
 
                 var request = new
                 {
-                    contents = new[]
+                    model = "google/gemini-2.0-flash-exp:free",
+                    messages = new[]
                     {
                         new
                         {
-                            parts = new[]
-                            {
-                                new
-                                {
-                                    text = $@"You are a friendly and knowledgeable plant care expert. Analyze the sensor data history for this {plantName} and provide a detailed, caring assessment in {language} language.
+                            role = "user",
+                            content = $@"You are a friendly and knowledgeable plant care expert. Analyze the sensor data history for this {plantName} and provide a detailed, caring assessment in {language} language.
 
-                                    Plant: {plantName}
-                                    Time Period: {sensorDataList.Count} measurements over {(DateTimeOffset.FromUnixTimeSeconds(sensorDataList.Last().Timestamp) - DateTimeOffset.FromUnixTimeSeconds(sensorDataList.First().Timestamp)).TotalHours:F1} hours
+                            Plant: {plantName}
+                            Time Period: {sensorDataList.Count} measurements over {(DateTimeOffset.FromUnixTimeSeconds(sensorDataList.Last().Timestamp) - DateTimeOffset.FromUnixTimeSeconds(sensorDataList.First().Timestamp)).TotalHours:F1} hours
 
-                                    Sensor Data History:
-                                    {sensorDataText}
+                            Sensor Data History:
+                            {sensorDataText}
 
-                                    Consider the specific needs of {plantName} and provide a thorough analysis that would be helpful and reassuring to a plant owner.
-                                    Analyze trends over time and identify any concerning patterns.
-                                    If there are issues, explain them clearly but gently, and provide specific, actionable recommendations.
-                                    
-                                    For the health status, use friendly phrases like:
-                                    - 'Happy and thriving!'
-                                    - 'Doing well, but could use some minor adjustments'
-                                    - 'Needs a little extra care and attention'
-                                    - 'Could use some help to get back to optimal health'
-                                    
-                                    For issues and recommendations, be specific and encouraging, explaining why each adjustment will help.
-                                    
-                                    Please provide the response in {language} language."
-                                }
-                            }
+                            Consider the specific needs of {plantName} and provide a thorough analysis that would be helpful and reassuring to a plant owner.
+                            Analyze trends over time and identify any concerning patterns.
+                            If there are issues, explain them clearly but gently, and provide specific, actionable recommendations.
+                            
+                            For the health status, use friendly phrases like:
+                            - 'Happy and thriving!'
+                            - 'Doing well, but could use some minor adjustments'
+                            - 'Needs a little extra care and attention'
+                            - 'Could use some help to get back to optimal health'
+                            
+                            For issues and recommendations, be specific and encouraging, explaining why each adjustment will help.
+                            
+                            Please provide the response in {language} language."
                         }
                     },
-                    generationConfig = new
+                    response_format = new
                     {
-                        temperature = 0.7,
-                        topK = 32,
-                        topP = 1,
-                        maxOutputTokens = 2048,
-                        candidateCount = 1,
-                        responseMimeType = "application/json",
-                        responseSchema = new
+                        type = "json_schema",
+                        json_schema = new
                         {
-                            type = "OBJECT",
-                            properties = new
+                            name = "plant_health_analysis",
+                            strict = true,
+                            schema = new
                             {
-                                needs_attention = new { type = "BOOLEAN" },
-                                health_status = new { type = "STRING" },
-                                issues = new
+                                type = "object",
+                                properties = new
                                 {
-                                    type = "ARRAY",
-                                    items = new { type = "STRING" }
+                                    needs_attention = new { type = "boolean" },
+                                    health_status = new { type = "string" },
+                                    issues = new
+                                    {
+                                        type = "array",
+                                        items = new { type = "string" }
+                                    },
+                                    recommendations = new
+                                    {
+                                        type = "array",
+                                        items = new { type = "string" }
+                                    }
                                 },
-                                recommendations = new
-                                {
-                                    type = "ARRAY",
-                                    items = new { type = "STRING" }
-                                }
-                            },
-                            required = new[] { "needs_attention", "health_status", "issues", "recommendations" }
+                                required = new[] { "needs_attention", "health_status", "issues", "recommendations" },
+                                additionalProperties = false
+                            }
                         }
                     }
                 };
 
-                var response = await _httpClient.PostAsJsonAsync(url, request);
+                var response = await _httpClient.PostAsJsonAsync(API_BASE_URL, request);
                 
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
-                    _logger.LogError("Gemini API error response: {ErrorContent}", errorContent);
+                    _logger.LogError("OpenRouter API error response: {ErrorContent}", errorContent);
                 }
                 
                 response.EnsureSuccessStatusCode();
 
-                var geminiResponse = await response.Content.ReadFromJsonAsync<GeminiResponse>();
-                var jsonResponse = geminiResponse?.Candidates?.FirstOrDefault()?.Content?.Parts?.FirstOrDefault()?.Text;
+                var openRouterResponse = await response.Content.ReadFromJsonAsync<OpenRouterResponse>();
+                var jsonResponse = openRouterResponse?.Choices?.FirstOrDefault()?.Message?.Content;
 
                 if (string.IsNullOrEmpty(jsonResponse))
                 {
-                    throw new Exception("Failed to get valid response from Gemini");
+                    throw new Exception("Failed to get valid response from OpenRouter");
                 }
 
-                jsonResponse = jsonResponse.Replace("```json", "").Replace("```", "").Trim();
-                
                 return JsonSerializer.Deserialize<PlantHealthAnalysis>(jsonResponse)!;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error analyzing plant health with Gemini for plant: {PlantName}", device.Name);
+                _logger.LogError(ex, "Error analyzing plant health with OpenRouter for plant: {PlantName}", device.Name);
                 throw;
             }
         }
     }
 
-    public class GeminiResponse
+    public class OpenRouterResponse
     {
-        [JsonPropertyName("candidates")]
-        public List<Candidate>? Candidates { get; set; }
+        [JsonPropertyName("choices")]
+        public List<Choice>? Choices { get; set; }
     }
 
-    public class Candidate
+    public class Choice
+    {
+        [JsonPropertyName("message")]
+        public Message? Message { get; set; }
+    }
+
+    public class Message
     {
         [JsonPropertyName("content")]
-        public Content? Content { get; set; }
-    }
-
-    public class Content
-    {
-        [JsonPropertyName("parts")]
-        public List<Part>? Parts { get; set; }
-    }
-
-    public class Part
-    {
-        [JsonPropertyName("text")]
-        public string? Text { get; set; }
+        public string? Content { get; set; }
     }
 
     public class PlantHealthAnalysis
